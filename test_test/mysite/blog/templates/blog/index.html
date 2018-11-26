@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+body {
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.box {
+  font: 10px sans-serif;
+}
+
+.box line,
+.box rect,
+.box circle {
+  stroke: #000;
+  stroke-width: 1px;
+}
+
+.box .center {
+  stroke-dasharray: 3,3;
+}
+
+.box .outlier {
+  fill: none;
+  stroke: #000;
+}
+
+.axis {
+  font: 12px sans-serif;
+}
+ 
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+ 
+.x.axis path { 
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+</style>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<body>
+<script src="/static/box.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+
+<form method=POST>
+	{% csrf_token %}
+	{{form}}
+	<input type="submit" value="Submit"/>
+</form>
+<script>
+
+
+var labels = true; // show the text labels beside individual boxplots?
+
+var margin = {top: 30, right: 50, bottom: 70, left: 50};
+var  width = 400 - margin.left - margin.right;
+var height = 400 - margin.top - margin.bottom;
+	
+var min = Infinity,
+    max = -Infinity;
+	
+// parse in the data	
+d3.csv('/static/{{csv_file}}', function(error, csv) {
+	// using an array of arrays with
+	// data[n][2] 
+	// where n = number of columns in the csv file 
+	// data[i][0] = name of the ith column
+	// data[i][1] = array of values of ith column
+	
+	var treat_list = [];
+	for(var i = 0; i < csv.length; i++){
+			treat_list.push(csv[i].treatment)
+		};
+
+	var set_treat = treat_list.reduce(function(a,b){
+  		if (a.indexOf(b) < 0 ) a.push(b);
+  			return a;
+  		},[]);
+
+	
+
+	var data = [];
+
+	for (var i = 0; i <  set_treat.length; i ++){
+		data[i]    = [];
+		data[i][0] = [];
+		data[i][1] = [];
+		
+		data[i][0].push(set_treat[i])
+		
+		for (var j =0; j < csv.length; j++){
+			if(csv[j].treatment == set_treat[i]){
+				data[i][1].push(Math.fround(csv[j].tpm));
+			};
+
+		}
+	}
+	
+
+	
+	csv.forEach(function(x){
+		var tpm_value = Math.fround(x.tpm)
+
+		if (tpm_value > max) max = tpm_value;
+		if (tpm_value < min) min = tpm_value;
+
+	})
+
+	var chart = d3.box()
+		.whiskers(iqr(1.5))
+		.height(height)	
+		.domain([min, max])
+		.showLabels(labels);
+
+	var svg = d3.select("body").append("svg")
+		.attr("width", width + margin.left + margin.right)
+		.attr("height", height + margin.top + margin.bottom)
+		.attr("class", "box")    
+		.append("g")
+		.attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+	
+	// the x-axis
+	var x = d3.scale.ordinal()	   
+		.domain( data.map(function(d) {console.log(d[0]); return d[0] } ) )	    
+		.rangeRoundBands([0 , width], 0.7, 0.3); 		
+
+	var xAxis = d3.svg.axis()
+		.scale(x)
+		.orient("bottom");
+
+	// the y-axis
+	var y = d3.scale.linear()
+		.domain([min, max])
+		.range([height + margin.top, 0 + margin.top]);
+	
+	var yAxis = d3.svg.axis()
+    .scale(y)
+    .orient("left");
+
+	// draw the boxplots
+	var colorCodes = ['#F7DC6F', '#CD5C5C', '#58D68D','#FDFEFE'];
+	
+
+	svg.selectAll(".box")	   
+      .data(data)
+	  .enter().append("g")
+		.attr("transform", function(d) {console.log(x(d[0])); return "translate(" +  x(d[0])  + "," + margin.top + ")"; } )
+		.call(chart.width(x.rangeBand()))
+		.attr('fill',function(d,i) {for(var x=0; x < set_treat.length; x++)
+			if(i==x){console.log(colorCodes[x]);return colorCodes[x]}
+
+	})
+
+	      
+	// add a title
+	svg.append("text")
+        .attr("x", (width / 2))             
+        .attr("y", 0 + (margin.top / 2))
+        .attr("text-anchor", "middle")  
+        .style("font-size", "18px") 
+        //.style("text-decoration", "underline")  
+        .text("{{query}}");
+ 
+	 // draw y axis
+	svg.append("g")
+        .attr("class", "y axis")
+        .call(yAxis)
+		.append("text") // and text1
+		  .attr("transform", "rotate(-90)")
+		  .attr("y", -50)
+		  .attr('x', -150)
+		  .attr("dy", ".71em")
+		  .style("text-anchor", "end")
+		  .style("font-size", "16px") 
+		  .text("TPM");		
+	
+	// draw x axis	
+	svg.append("g")
+      .attr("class", "x axis")
+      .attr("transform", "translate(0," + (height  + margin.top + 10) + ")")
+      .call(xAxis)
+	  .append("text")             // text label for the x axis
+        .attr("x", (width / 2) )
+        .attr("y",  10 )
+		.attr("dy", ".71em")
+        .style("text-anchor", "middle")
+		.style("font-size", "16px") 
+        //.text("Circadian Clock"); 
+
+
+});
+
+
+// Returns a function to compute the interquartile range.
+function iqr(k) {
+  return function(d, i) {
+    var q1 = d.quartiles[0],
+        q3 = d.quartiles[2],
+        iqr = (q3 - q1) * k,
+        i = -1,
+        j = d.length;
+    while (d[++i] < q1 - iqr);
+    while (d[--j] > q3 + iqr);
+    return [i, j];
+  };
+}
+
+</script>
